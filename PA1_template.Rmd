@@ -1,25 +1,139 @@
----
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
----
+#title: Assignment 1 for reproducible Research
+##author: Derek Corcoran
+##date: Sunday, April 19, 2015  
 
 
-## Loading and preprocessing the data
+First we load the data into R. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+```{r}
+activity <- read.csv("~/Coursera/specialization R data/Reproducible research/Week2/activity.csv")
+```
+After that we transform the date column into date format 
+```{r}
+activity$date<-as.Date(activity$date, "%Y-%m-%d")
+```
+
+Let's see a summary of the data
+
+```{r}
+summary(activity)
+```
+
+##Activity per day
+
+In order to get the number of steps taken each day we will use dplyr and summarise the steps taken by date, and name it properly
 
 
+```{r}
+library(dplyr)
+summary_by_date <-summarise(group_by(activity, date), sum(steps))
+colnames(summary_by_date)[2] <- "Steps_taken_day"
+head(summary_by_date)
+```
+We can now explore the behaviour of our walker by ploting an histogram
 
-## What is mean total number of steps taken per day?
+```{r}
+hist(summary_by_date$Steps_taken_day, xlab="Steps taken per day", breaks=10, main=NULL)
+```
 
+Now we can calculate that the average steps taken by our anonymous contributor and median are
 
+```{r} 
+mean(summary_by_date$Steps_taken_day,na.rm=TRUE)
+median(summary_by_date$Steps_taken_day,na.rm=TRUE)
+```
 
-## What is the average daily activity pattern?
+##Daily patterns
 
+When during the day does our anonymous contributor takes more steps? when does he or she rest?
 
+In order to do that we will have to know the average number of steps he or she has taken at every 5 minute interval
 
-## Imputing missing values
+```{r}
+summary_by_time <-summarise(group_by(activity, interval), mean(steps, na.rm=TRUE))
+colnames(summary_by_time)[2] <- "Steps_by_time"
+head(summary_by_time)
+```
 
+Now we can plot a time series, to see the time of the day and the average steps our contributor walks
 
+```{r}
+plot(ts(summary_by_time$Steps_by_time, frequency = 288),xaxt="n",ylab= "Average steps")
 
-## Are there differences in activity patterns between weekdays and weekends?
+```
+
+At what time does or walker take more steps
+```{r}
+summarise(summary_by_time, max = max(Steps_by_time))
+filter(summary_by_time, Steps_by_time >= 206.1698)
+```
+
+By doing this we know that our walker walked the most at 8:35 during the months of october and november of 2010
+
+##The effect of missing values
+
+How do missing values affect our results, first let's calculate the number of observation with missing values
+```{r}
+sapply(activity, function(x) sum(is.na(x)))
+```
+
+Which is 0.1% of the observations
+
+```{r}
+length(activity)/sum(is.na(activity$steps))
+```
+
+Now we replace the NA values, on each day with the average values on that time of the day for the whole period
+
+```{r}
+library("data.table", lib.loc="~/R/win-library/3.1")
+activity$steps<-as.numeric(activity$steps)
+TooFill<-data.table(activity, key="interval")
+FillWith<-data.table(summary_by_time,key="interval")
+WorkDT <- TooFill[FillWith]
+WorkDT[is.na(steps), steps:=Steps_by_time]
+new_summary_by_date <-summarise(group_by(WorkDT, date), sum(steps))
+colnames(new_summary_by_date)[2] <- "Steps_taken_day"
+head(new_summary_by_date)
+```
+Now with this new database, we will do a histogram just as we did when we had the NA values
+
+```{r}
+hist(new_summary_by_date$Steps_taken_day, xlab="Steps taken per day", breaks=10, main=NULL)
+```
+
+Now we can calculate the mean and median for the new database and compare it with our previous results
+
+```{r} 
+mean(new_summary_by_date$Steps_taken_day,na.rm=TRUE)
+median(new_summary_by_date$Steps_taken_day,na.rm=TRUE)
+
+mean(new_summary_by_date$Steps_taken_day,na.rm=TRUE)-mean(summary_by_date$Steps_taken_day,na.rm=TRUE)
+
+median(new_summary_by_date$Steps_taken_day,na.rm=TRUE)-median(summary_by_date$Steps_taken_day,na.rm=TRUE)
+```
+
+As we see the mean stays the same, but the median increases by one
+
+##effect of the day of the week
+
+First we develop a new variable to differienciate weekdays from weekends
+```{r}
+library("chron", lib.loc="~/R/win-library/3.1")
+activity$daytype <- chron::is.weekend(activity$date)
+activity$daytype <-as.character(activity$daytype) 
+activity$daytype[activity$daytype == "TRUE"] <- "Weekend"
+activity$daytype[activity$daytype == "FALSE"] <- "Weekday"
+head(activity)
+```
+Now we average every 5 minute interval differentiating between weekdays and weekends and we plot it
+
+```{r}
+summary_by_time_wd <-summarise(group_by(activity, interval, daytype), mean(steps, na.rm=TRUE))
+colnames(summary_by_time_wd)[3] <- "Steps_by_time"
+head(summary_by_time_wd)
+library("lattice", lib.loc="C:/Program Files/R/R-3.1.2/library")
+attach(summary_by_time_wd)
+xyplot(Steps_by_time~interval|daytype, main="Mean steps by time", ylab="Steps", xlab="Time", type="l")
+```
+as we see weekend walks are more even (don't have peak) and they start later
